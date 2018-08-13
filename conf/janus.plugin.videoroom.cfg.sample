@@ -52,6 +52,18 @@ fir_freq = 10
 record = false
 ;rec_dir = /path/to/recordings-folder
 
+; Same room as 1234 but with 40 publishers to load test the server
+[4321]
+description = Demo Room
+secret = adminpwd
+publishers = 40
+bitrate = 128000
+fir_freq = 10
+;audiocodec = opus
+;videocodec = vp8
+record = false
+;rec_dir = /path/to/recordings-folder
+
 
 ; This other demo room here is only there in case you want to play with
 ; the VP9 SVC support. Notice that you'll need a Chrome launched with

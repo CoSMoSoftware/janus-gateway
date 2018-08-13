@@ -1570,6 +1570,18 @@ function Janus(gatewayCallbacks) {
 			Janus.log("Creating PeerConnection");
 			Janus.debug(pc_constraints);
 			config.pc = new RTCPeerConnection(pc_config, pc_constraints);
+
+ 			if(config.myStream) {
+				Janus.log("Exposing PeerConnection in window.pc");
+				window.pc = config.pc;
+			} else if (!window.remotePc) {
+				Janus.log("Exposing first remote PeerConnection in window.remotePc");
+				window.remotePc = [config.pc];
+			} else {
+				Janus.log("Adding remote PeerConnection in the exposed object window.remotePc");
+				window.remotePc.push(config.pc);
+			}
+
 			Janus.debug(config.pc);
 			if(config.pc.getStats) {	// FIXME
 				config.volume = {};
