@@ -66,16 +66,6 @@ var doSimulcast = (getQueryStringValue("simulcast") === "yes" || getQueryStringV
 
 var username = GetURLParameter('username') || "Unidentified";
 
-function csInitCallback(csError, csErrMsg) {
-  console.log("Status: errCode= " + csError + " errMsg= " + csErrMsg );
-}
-
-// callback function to receive the stats
-function csStatsCallback(stats) {
-	console.log(stats);
-}
-
-
 $(document).ready(function() {
 	// Initialize the library (all console debuggers enabled)
 	Janus.init({debug: "all", callback: function() {
@@ -205,7 +195,7 @@ $(document).ready(function() {
 											var leaving = msg["leaving"];
 											Janus.log("Publisher left: " + leaving);
 											var remoteFeed = null;
-											for(var i=1; i<6; i++) {
+											for(var i=1; i<9; i++) {
 												if(feeds[i] != null && feeds[i] != undefined && feeds[i].rfid == leaving) {
 													remoteFeed = feeds[i];
 													break;
@@ -228,7 +218,7 @@ $(document).ready(function() {
 												return;
 											}
 											var remoteFeed = null;
-											for(var i=1; i<6; i++) {
+											for(var i=1; i<9; i++) {
 												if(feeds[i] != null && feeds[i] != undefined && feeds[i].rfid == unpublished) {
 													remoteFeed = feeds[i];
 													break;
@@ -293,7 +283,7 @@ $(document).ready(function() {
 									$('#videolocal').append('<button class="btn btn-warning btn-xs" id="mute" style="position: absolute; top: -9px; right: 250px;">Mute</button>');
 									$('#mute').click(toggleMute);
 									// Add an 'unpublish' button
-									$('#videolocal').append('<button class="btn btn-warning btn-xs" id="unpublish" style="position: absolute; bottotop: -9px; right: 0px; margin-right: 15px;">Unpublish</button>');
+									$('#videolocal').append('<button class="btn btn-warning btn-xs" id="unpublish" style="position: absolute; top: -9px; right: 0px; margin-right: 15px;">Unpublish</button>');
 									$('#unpublish').click(unpublishOwnFeed);
 								}
 								$('#publisher').removeClass('hide').html(myusername).show();
@@ -365,7 +355,7 @@ function checkEnter(field, event) {
 }
 
 function registerUsername() {
-	var username = GetURLParameter('username') || "Unidentified";
+	username = GetURLParameter('username') || "Unidentified";
 	var register = { "request": "join", "room": myroom, "ptype": "publisher", "display": username };
 	myusername = username;
 	sfutest.send({"message": register});
@@ -469,7 +459,7 @@ function newRemoteFeed(id, display, audio, video) {
 				} else if(event != undefined && event != null) {
 					if(event === "attached") {
 						// Subscriber created and attached
-						for(var i=1;i<6;i++) {
+						for(var i=1;i<9;i++) {
 							if(feeds[i] === undefined || feeds[i] === null) {
 								feeds[i] = remoteFeed;
 								remoteFeed.rfindex = i;
