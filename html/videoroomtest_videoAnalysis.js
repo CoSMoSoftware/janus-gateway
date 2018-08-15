@@ -48,8 +48,6 @@ if(window.location.protocol === 'http:')
 else
 	server = "https://" + window.location.hostname + ":8089/janus";
 
-server = "https://lbjanus1.cosmosoftware.io:8080/janus";
-
 var janus = null;
 var sfutest = null;
 var opaqueId = "videoroomtest-"+Janus.randomString(12);

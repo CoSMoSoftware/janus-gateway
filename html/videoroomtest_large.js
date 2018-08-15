@@ -52,7 +52,7 @@ var janus = null;
 var sfutest = null;
 var opaqueId = "videoroomtest-"+Janus.randomString(12);
 
-var myroom = 4321;	// Demo room
+var myroom = parseInt(GetURLParameter("roomId")) || 4321;	// Demo room
 var myusername = null;
 var myid = null;
 var mystream = null;
@@ -196,7 +196,7 @@ $(document).ready(function() {
 												var leaving = msg["leaving"];
 												Janus.log("Publisher left: " + leaving);
 												var remoteFeed = null;
-												for(var i=1; i<6; i++) {
+												for(var i=1; i<40; i++) {
 													if(feeds[i] != null && feeds[i] != undefined && feeds[i].rfid == leaving) {
 														remoteFeed = feeds[i];
 														break;
@@ -219,7 +219,7 @@ $(document).ready(function() {
 													return;
 												}
 												var remoteFeed = null;
-												for(var i=1; i<6; i++) {
+												for(var i=1; i<40; i++) {
 													if(feeds[i] != null && feeds[i] != undefined && feeds[i].rfid == unpublished) {
 														remoteFeed = feeds[i];
 														break;
@@ -356,35 +356,10 @@ function checkEnter(field, event) {
 }
 
 function registerUsername() {
-	if($('#username').length === 0) {
-		// Create fields to register
-		$('#register').click(registerUsername);
-		$('#username').focus();
-	} else {
-		// Try a registration
-		$('#username').attr('disabled', true);
-		$('#register').attr('disabled', true).unbind('click');
-		var username = $('#username').val();
-		if(username === "") {
-			$('#you')
-				.removeClass().addClass('label label-warning')
-				.html("Insert your display name (e.g., pippo)");
-			$('#username').removeAttr('disabled');
-			$('#register').removeAttr('disabled').click(registerUsername);
-			return;
-		}
-		if(/[^a-zA-Z0-9]/.test(username)) {
-			$('#you')
-				.removeClass().addClass('label label-warning')
-				.html('Input is not alphanumeric');
-			$('#username').removeAttr('disabled').val("");
-			$('#register').removeAttr('disabled').click(registerUsername);
-			return;
-		}
-		var register = { "request": "join", "room": myroom, "ptype": "publisher", "display": username };
-		myusername = username;
-		sfutest.send({"message": register});
-	}
+	var username = GetURLParameter('username') || "Unidentified";
+	var register = { "request": "join", "room": myroom, "ptype": "publisher", "display": username };
+	myusername = username;
+	sfutest.send({"message": register});
 }
 
 function publishOwnFeed(useAudio) {
@@ -485,7 +460,7 @@ function newRemoteFeed(id, display, audio, video) {
 				} else if(event != undefined && event != null) {
 					if(event === "attached") {
 						// Subscriber created and attached
-						for(var i=1;i<6;i++) {
+						for(var i=1;i<40;i++) {
 							if(feeds[i] === undefined || feeds[i] === null) {
 								feeds[i] = remoteFeed;
 								remoteFeed.rfindex = i;
@@ -761,3 +736,14 @@ function updateSimulcastButtons(feed, substream, temporal) {
 		$('#tl' + index + '-0').removeClass('btn-primary btn-success').addClass('btn-primary');
 	}
 }
+
+function GetURLParameter(key) {
+	var pageUrl = window.location.search.substring(1);
+	var urlVariables = pageUrl.split('&');
+	for (var i = 0; i <urlVariables.length; i++) {
+	  var parameterName = urlVariables[i].split('=');
+	  if (parameterName[0] == key) {
+		return parameterName[1];
+	  }
+	}
+  }
