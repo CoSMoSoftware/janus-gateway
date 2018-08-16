@@ -90,15 +90,7 @@ $(document).ready(function() {
 								Janus.log("Plugin attached! (" + sfutest.getPlugin() + ", id=" + sfutest.getId() + ")");
 								Janus.log("  -- This is a publisher/manager");
 								// Prepare the username registration
-								$('#videojoin').removeClass('hide').show();
-								$('#registernow').removeClass('hide').show();
-								$('#register').click(registerUsername);
-								$('#username').focus();
-								$('#start').removeAttr('disabled').html("Stop")
-									.click(function() {
-										$(this).attr('disabled', true);
-										janus.destroy();
-									});
+								registerUsername();
 							},
 							error: function(error) {
 								Janus.error("  -- Error attaching plugin...", error);
