@@ -1582,6 +1582,11 @@ function Janus(gatewayCallbacks) {
 				window.remotePc.push(config.pc);
 			}
 
+			let getStats = new GetStats();
+            getStats.init("//<LOGSTASH_IP>:5000", username, myroom, "Janus", config.pc); //Use "http://127.0.0.1:5000" to use it locally with logstash on the client side
+            getStats.startPublishing(10000);
+
+
 			Janus.debug(config.pc);
 			if(config.pc.getStats) {	// FIXME
 				config.volume = {};
