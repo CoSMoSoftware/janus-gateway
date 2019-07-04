@@ -1582,6 +1582,16 @@ function Janus(gatewayCallbacks) {
 				window.remotePc.push(config.pc);
 			}
 
+			//let getStats = new GetStats();
+			//window.myStats = getStats;
+			//getStats.init("//logstash.cosmosoftware.io:5000", username, myroom, "Janus", config.pc); //Use "http://127.0.0.1:5000" to use it locally with logstash on the client side
+			//getStats.startPublishing(15000);
+			//testStats.init("//logstash.cosmosoftware.io:5000", username, myroom, "Janus", config.pc); //Use "http://127.0.0.1:5000" to use it locally with logstash on the client side
+			//testStats.startPublishing(15000);
+
+			//To be used if getstats doesnt work
+			//sendStats(config.pc, "Janustest", "test1234");
+
 			Janus.debug(config.pc);
 			if(config.pc.getStats) {	// FIXME
 				config.volume = {};

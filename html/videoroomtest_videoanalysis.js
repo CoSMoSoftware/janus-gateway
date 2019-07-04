@@ -48,11 +48,25 @@ if(window.location.protocol === 'http:')
 else
 	server = "https://" + window.location.hostname + ":8089/janus";
 
+server = "https://sgjanusgw.cosmosoftware.io:8080/janus";
+
 var janus = null;
 var sfutest = null;
 var opaqueId = "videoroomtest-"+Janus.randomString(12);
 
-var myroom = parseInt(GetURLParameter("roomId")) || 4321;	// Demo room
+//var myroom = parseInt(GetURLParameter("roomId")) || 4321;	// Demo room
+var myroomStr = GetURLParameter("roomId");
+
+var myroom = 4321;
+
+if (isNaN(myroomStr)) {
+  console.log("myroomStr " + myroomStr);
+  myroom = parseInt(myroomStr.substr(myroomStr.length - 1));
+} else {
+  myroom = parseInt(myroomStr);
+}
+ console.log("myroom " + myroom);
+
 var myusername = null;
 var myid = null;
 var mystream = null;
@@ -429,7 +443,8 @@ function newRemoteFeed(id, display, audio, video) {
 				// 'offer_data' properties to false (they're true by default), e.g.:
 				// 		listen["offer_video"] = false;
 				// For example, if the publisher is VP8 and this is Safari, let's avoid video
-				if(video !== "h264" && Janus.webRTCAdapter.browserDetails.browser === "safari") {
+				if(Janus.webRTCAdapter.browserDetails.browser === "safari" &&
+						(video === "vp9" || (video === "vp8" && !Janus.safariVp8))) {
 					if(video)
 						video = video.toUpperCase()
 					toastr.warning("Publisher is using " + video + ", but Safari doesn't support it: disabling video");
