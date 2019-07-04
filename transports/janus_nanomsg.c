@@ -4,7 +4,7 @@
  * \brief  Janus Nanomsg transport plugin
  * \details  This is an implementation of a Nanomsg transport for the
  * Janus API. This means that, with the help of this module, local and
- * remote applications can use Nanomsg to make requests to the gateway.
+ * remote applications can use Nanomsg to make requests to Janus.
  * Note that not all the protocols Nanomsg implements are made available
  * in this plugin: specifically, you'll only be able to use the \c NN_PAIR
  * transport mechanism. Future versions may implement more, but for the
@@ -126,19 +126,26 @@ int janus_nanomsg_init(janus_transport_callbacks *callback, const char *config_p
 		return -1;
 	}
 
-	/* This is the callback we'll need to invoke to contact the gateway */
+	/* This is the callback we'll need to invoke to contact the Janus core */
 	gateway = callback;
 
 	/* Read configuration */
 	char filename[255];
-	g_snprintf(filename, 255, "%s/%s.cfg", config_path, JANUS_NANOMSG_PACKAGE);
+	g_snprintf(filename, 255, "%s/%s.jcfg", config_path, JANUS_NANOMSG_PACKAGE);
 	JANUS_LOG(LOG_VERB, "Configuration file: %s\n", filename);
 	janus_config *config = janus_config_parse(filename);
+	if(config == NULL) {
+		JANUS_LOG(LOG_WARN, "Couldn't find .jcfg configuration file (%s), trying .cfg\n", JANUS_NANOMSG_PACKAGE);
+		g_snprintf(filename, 255, "%s/%s.cfg", config_path, JANUS_NANOMSG_PACKAGE);
+		JANUS_LOG(LOG_VERB, "Configuration file: %s\n", filename);
+		config = janus_config_parse(filename);
+	}
 	if(config != NULL) {
 		/* Handle configuration */
 		janus_config_print(config);
+		janus_config_category *config_general = janus_config_get_create(config, NULL, janus_config_type_category, "general");
 
-		janus_config_item *item = janus_config_get_item_drilldown(config, "general", "json");
+		janus_config_item *item = janus_config_get(config, config_general, janus_config_type_item, "json");
 		if(item && item->value) {
 			/* Check how we need to format/serialize the JSON output */
 			if(!strcasecmp(item->value, "indented")) {
@@ -157,7 +164,7 @@ int janus_nanomsg_init(janus_transport_callbacks *callback, const char *config_p
 		}
 
 		/* Check if we need to send events to handlers */
-		janus_config_item *events = janus_config_get_item_drilldown(config, "general", "events");
+		janus_config_item *events = janus_config_get(config, config_general, janus_config_type_item, "events");
 		if(events != NULL && events->value != NULL)
 			notify_events = janus_is_true(events->value);
 		if(!notify_events && callback->events_is_enabled()) {
@@ -177,13 +184,13 @@ int janus_nanomsg_init(janus_transport_callbacks *callback, const char *config_p
 		}
 
 		/* Setup the Janus API Nanomsg server(s) */
-		item = janus_config_get_item_drilldown(config, "general", "enabled");
+		item = janus_config_get(config, config_general, janus_config_type_item, "enabled");
 		if(!item || !item->value || !janus_is_true(item->value)) {
 			JANUS_LOG(LOG_WARN, "Nanomsg server disabled (Janus API)\n");
 		} else {
-			item = janus_config_get_item_drilldown(config, "general", "address");
+			item = janus_config_get(config, config_general, janus_config_type_item, "address");
 			const char *address = item && item->value ? item->value : NULL;
-			item = janus_config_get_item_drilldown(config, "general", "mode");
+			item = janus_config_get(config, config_general, janus_config_type_item, "mode");
 			const char *mode = item && item->value ? item->value : NULL;
 			if(mode == NULL)
 				mode = "bind";
@@ -218,13 +225,13 @@ int janus_nanomsg_init(janus_transport_callbacks *callback, const char *config_p
 			}
 		}
 		/* Do the same for the Admin API, if enabled */
-		item = janus_config_get_item_drilldown(config, "admin", "admin_enabled");
+		item = janus_config_get(config, config_general, janus_config_type_item, "admin_enabled");
 		if(!item || !item->value || !janus_is_true(item->value)) {
 			JANUS_LOG(LOG_WARN, "Nanomsg server disabled (Admin API)\n");
 		} else {
-			item = janus_config_get_item_drilldown(config, "admin", "admin_address");
+			item = janus_config_get(config, config_general, janus_config_type_item, "admin_address");
 			const char *address = item && item->value ? item->value : NULL;
-			item = janus_config_get_item_drilldown(config, "general", "admin_mode");
+			item = janus_config_get(config, config_general, janus_config_type_item, "admin_mode");
 			const char *mode = item && item->value ? item->value : NULL;
 			if(mode == NULL)
 				mode = "bind";

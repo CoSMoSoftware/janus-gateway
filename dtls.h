@@ -4,7 +4,7 @@
  * \brief    DTLS/SRTP processing (headers)
  * \details  Implementation (based on OpenSSL and libsrtp) of the DTLS/SRTP
  * transport. The code takes care of the DTLS handshake between peers and
- * the gateway, and sets the proper SRTP and SRTCP context up accordingly.
+ * the server, and sets the proper SRTP and SRTCP context up accordingly.
  * A DTLS alert from a peer is notified to the plugin handling him/her
  * by means of the hangup_media callback.
  *
@@ -24,12 +24,17 @@
 #include "refcount.h"
 #include "dtls-bio.h"
 
+/*! \brief Helper method to return info on the crypto library and its version
+ * @returns A pointer to a static string with the version */
+const char *janus_get_ssl_version(void);
+
 /*! \brief DTLS stuff initialization
  * @param[in] server_pem Path to the certificate to use
  * @param[in] server_key Path to the key to use
  * @param[in] password Password needed to use the key, if any
+ * @param[in] timeout DTLS timeout base to use for retransmissions (ignored if not using BoringSSL)
  * @returns 0 in case of success, a negative integer on errors */
-gint janus_dtls_srtp_init(const char *server_pem, const char *server_key, const char *password);
+gint janus_dtls_srtp_init(const char *server_pem, const char *server_key, const char *password, guint timeout);
 /*! \brief Method to cleanup DTLS stuff before exiting */
 void janus_dtls_srtp_cleanup(void);
 /*! \brief Method to return a string representation (SHA-256) of the certificate fingerprint */
@@ -55,7 +60,7 @@ typedef enum janus_dtls_state {
 typedef struct janus_dtls_srtp {
 	/*! \brief Opaque pointer to the component this DTLS-SRTP context belongs to */
 	void *component;
-	/*! \brief DTLS role of the gateway for this stream: 1=client, 0=server */
+	/*! \brief DTLS role of the server for this stream: 1=client, 0=server */
 	janus_dtls_role dtls_role;
 	/*! \brief DTLS state of this component: -1=failed, 0=nothing, 1=trying, 2=connected */
 	janus_dtls_state dtls_state;
@@ -69,8 +74,6 @@ typedef struct janus_dtls_srtp {
 	BIO *read_bio;
 	/*! \brief Write BIO (outgoing DTLS data) */
 	BIO *write_bio;
-	/*! \brief Filter BIO (fix MTU fragmentation on outgoing DTLS data, if required) */
-	BIO *filter_bio;
 	/*! \brief Whether SRTP has been correctly set up for this component or not */
 	gint srtp_valid;
 	/*! \brief The SRTP profile currently in use */
@@ -137,17 +140,13 @@ void janus_dtls_callback(const SSL *ssl, int where, int ret);
  * @param[in] ctx context used for the certificate verification */
 int janus_dtls_verify_callback(int preverify_ok, X509_STORE_CTX *ctx);
 
-/*! \brief DTLS BIOs to/from socket bridge
- * \details As libnice is going to actually send and receive data, and not OpenSSL, a read/write BIO is used to "bridge" the data between the crypto stuff and the network.
- * @param[in] dtls The janus_dtls_srtp instance to use */
-void janus_dtls_fd_bridge(janus_dtls_srtp *dtls);
-
 #ifdef HAVE_SCTP
 /*! \brief Callback (called from the ICE handle) to encapsulate in DTLS outgoing SCTP data (DataChannel)
  * @param[in] dtls The janus_dtls_srtp instance to use
+ * @param[in] label The label of the data channel to use
  * @param[in] buf The data buffer to encapsulate
  * @param[in] len The data length */
-void janus_dtls_wrap_sctp_data(janus_dtls_srtp *dtls, char *buf, int len);
+void janus_dtls_wrap_sctp_data(janus_dtls_srtp *dtls, char *label, char *buf, int len);
 
 /*! \brief Callback (called from the SCTP stack) to encapsulate in DTLS outgoing SCTP data (DataChannel)
  * @param[in] dtls The janus_dtls_srtp instance to use
@@ -158,9 +157,10 @@ int janus_dtls_send_sctp_data(janus_dtls_srtp *dtls, char *buf, int len);
 
 /*! \brief Callback to be notified about incoming SCTP data (DataChannel) to forward to the handle
  * @param[in] dtls The janus_dtls_srtp instance to use
+ * @param[in] label The label of the data channel the message is from
  * @param[in] buf The data buffer
  * @param[in] len The data length */
-void janus_dtls_notify_data(janus_dtls_srtp *dtls, char *buf, int len);
+void janus_dtls_notify_data(janus_dtls_srtp *dtls, char *label, char *buf, int len);
 #endif
 
 /*! \brief DTLS retransmission timer
@@ -183,5 +183,9 @@ const gchar *janus_get_dtls_srtp_role(janus_dtls_role role);
  * @param[in] profile The SRTP profile as exported by a DTLS-SRTP handshake
  * @returns A string representation of the profile */
 const gchar *janus_get_dtls_srtp_profile(int profile);
+
+/*! \brief Helper method to demultiplex DTLS from other protocols
+ * @param[in] buf Buffer to inspect */
+gboolean janus_is_dtls(char *buf);
 
 #endif

@@ -63,7 +63,7 @@ function JANUSSDP.findPayloadType(sdp, codec)
 				local n = a.value:gmatch("[^ ]+")
 				pt = tonumber(n())
 				break
-			end 
+			end
 		end
 	end
 	return pt
@@ -99,8 +99,6 @@ function JANUSSDP.findCodec(sdp, pt)
 					codec = "pcmu"
 				elseif a.value:find("pcma") ~= nil or a.value:find("PCMA") ~= nil then
 					codec = "pcma"
-				elseif a.value:find("pcma") ~= nil or a.value:find("PCMA") ~= nil then
-					codec = "pcma"
 				elseif a.value:find("isac16") ~= nil or a.value:find("ISAC16") ~= nil then
 					codec = "isac16"
 				elseif a.value:find("isac32") ~= nil or a.value:find("ISAC32") ~= nil then
@@ -109,10 +107,38 @@ function JANUSSDP.findCodec(sdp, pt)
 					codec = "isac32"
 				end
 				break
-			end 
+			end
 		end
 	end
 	return codec
+end
+
+function JANUSSDP.removeMLine(sdp, type)
+	if sdp == nil or type == nil then
+		return
+	end
+	local removelist = {}
+	local index = nil
+	local a = nil
+	local removing = false
+	for index,a in pairs(sdp) do
+		if a.type == "m" then
+			if a.name:find(type) ~= nil then
+				removing = true
+			else
+				removing = false
+			end
+		end
+		if removing == true then
+			removelist[#removelist+1] = index
+		end
+	end
+	local i = nil
+	for i=#removelist,1,-1 do
+		if removelist[i] ~= nil then
+			table.remove(sdp, removelist[i])
+		end
+	end
 end
 
 function JANUSSDP.removePayloadType(sdp, pt)
@@ -134,7 +160,7 @@ function JANUSSDP.removePayloadType(sdp, pt)
 			local n = a.value:gmatch("[^ ]+")
 			if tonumber(n()) == pt then
 				removelist[#removelist+1] = index
-			end 
+			end
 		end
 	end
 	local i = nil
@@ -353,7 +379,7 @@ function JANUSSDP.generateAnswer(offer, options)
 						answer[#answer+1] = a
 					elseif medium == "video" and tonumber(n()) == videoPt then
 						answer[#answer+1] = a
-					end 
+					end
 				end
 			else
 				answer[#answer+1] = a
