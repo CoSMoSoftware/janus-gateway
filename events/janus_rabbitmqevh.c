@@ -21,6 +21,7 @@
 #include "../config.h"
 #include "../mutex.h"
 #include "../utils.h"
+#include "../events.h"
 
 
 /* Plugin information */
@@ -115,65 +116,9 @@ static struct janus_json_parameter tweak_parameters[] = {
 #define JANUS_RABBITMQEVH_ERROR_UNKNOWN_ERROR			499
 
 
-/* Helper method to change the events mask */
-static void janus_rabbitmqevh_edit_events_mask(const char *list) {
-	if(!list)
-		return;
-	janus_flags mask;
-	janus_flags_reset(&mask);
-	if(!strcasecmp(list, "none")) {
-		/* Don't subscribe to anything at all */
-		janus_flags_reset(&mask);
-	} else if(!strcasecmp(list, "all")) {
-		/* Subscribe to everything */
-		janus_flags_set(&mask, JANUS_EVENT_TYPE_ALL);
-	} else {
-		/* Check what we need to subscribe to */
-		janus_flags_reset(&mask);
-		gchar **subscribe = g_strsplit(list, ",", -1);
-		if(subscribe != NULL) {
-			gchar *index = subscribe[0];
-			if(index != NULL) {
-				int i=0;
-				while(index != NULL) {
-					while(isspace(*index))
-						index++;
-					if(strlen(index)) {
-						if(!strcasecmp(index, "sessions")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_SESSION);
-						} else if(!strcasecmp(index, "handles")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_HANDLE);
-						} else if(!strcasecmp(index, "jsep")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_JSEP);
-						} else if(!strcasecmp(index, "webrtc")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_WEBRTC);
-						} else if(!strcasecmp(index, "media")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_MEDIA);
-						} else if(!strcasecmp(index, "plugins")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_PLUGIN);
-						} else if(!strcasecmp(index, "transports")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_TRANSPORT);
-						} else if(!strcasecmp(index, "core")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_CORE);
-						} else if(!strcasecmp(index, "external")) {
-							janus_flags_set(&mask, JANUS_EVENT_TYPE_EXTERNAL);
-						} else {
-							JANUS_LOG(LOG_WARN, "Unknown event type '%s'\n", index);
-						}
-					}
-					i++;
-					index = subscribe[i];
-				}
-			}
-			g_strfreev(subscribe);
-		}
-	}
-	memcpy(&janus_rabbitmqevh.events_mask, &mask, sizeof(janus_flags));
-}
-
-
 /* Plugin implementation */
 int janus_rabbitmqevh_init(const char *config_path) {
+	gboolean success = TRUE;
 	if(g_atomic_int_get(&stopping)) {
 		/* Still stopping from before */
 		return -1;
@@ -184,11 +129,18 @@ int janus_rabbitmqevh_init(const char *config_path) {
 	}
 	/* Read configuration */
 	char filename[255];
-	g_snprintf(filename, 255, "%s/%s.cfg", config_path, JANUS_RABBITMQEVH_PACKAGE);
+	g_snprintf(filename, 255, "%s/%s.jcfg", config_path, JANUS_RABBITMQEVH_PACKAGE);
 	JANUS_LOG(LOG_VERB, "Configuration file: %s\n", filename);
 	janus_config *config = janus_config_parse(filename);
+	if(config == NULL) {
+		JANUS_LOG(LOG_WARN, "Couldn't find .jcfg configuration file (%s), trying .cfg\n", JANUS_RABBITMQEVH_PACKAGE);
+		g_snprintf(filename, 255, "%s/%s.cfg", config_path, JANUS_RABBITMQEVH_PACKAGE);
+		JANUS_LOG(LOG_VERB, "Configuration file: %s\n", filename);
+		config = janus_config_parse(filename);
+	}
 	if(config != NULL)
 		janus_config_print(config);
+	janus_config_category *config_general = janus_config_get_create(config, NULL, janus_config_type_category, "general");
 
 	char *rmqhost = NULL;
 	const char *vhost = NULL, *username = NULL, *password = NULL;
@@ -201,13 +153,13 @@ int janus_rabbitmqevh_init(const char *config_path) {
 	const char *route_key = NULL, *exchange = NULL;
 
 	/* Setup the event handler, if required */
-	janus_config_item *item = janus_config_get_item_drilldown(config, "general", "enabled");
+	janus_config_item *item = janus_config_get(config, config_general, janus_config_type_item, "enabled");
 	if(!item || !item->value || !janus_is_true(item->value)) {
 		JANUS_LOG(LOG_WARN, "RabbitMQ event handler disabled\n");
 		goto error;
 	}
 
-	item = janus_config_get_item_drilldown(config, "general", "json");
+	item = janus_config_get(config, config_general, janus_config_type_item, "json");
 	if(item && item->value) {
 		/* Check how we need to format/serialize the JSON output */
 		if(!strcasecmp(item->value, "indented")) {
@@ -226,74 +178,74 @@ int janus_rabbitmqevh_init(const char *config_path) {
 	}
 
 	/* Which events should we subscribe to? */
-	item = janus_config_get_item_drilldown(config, "general", "events");
+	item = janus_config_get(config, config_general, janus_config_type_item, "events");
 	if(item && item->value)
-		janus_rabbitmqevh_edit_events_mask(item->value);
+		janus_events_edit_events_mask(item->value, &janus_rabbitmqevh.events_mask);
 
 	/* Is grouping of events ok? */
-	item = janus_config_get_item_drilldown(config, "general", "grouping");
+	item = janus_config_get(config, config_general, janus_config_type_item, "grouping");
 	if(item && item->value)
 		group_events = janus_is_true(item->value);
 
 	/* Handle configuration, starting from the server details */
-	item = janus_config_get_item_drilldown(config, "general", "host");
+	item = janus_config_get(config, config_general, janus_config_type_item, "host");
 	if(item && item->value)
 		rmqhost = g_strdup(item->value);
 	else
 		rmqhost = g_strdup("localhost");
 	int rmqport = AMQP_PROTOCOL_PORT;
-	item = janus_config_get_item_drilldown(config, "general", "port");
+	item = janus_config_get(config, config_general, janus_config_type_item, "port");
 	if(item && item->value)
 		rmqport = atoi(item->value);
 
 	/* Credentials and Virtual Host */
-	item = janus_config_get_item_drilldown(config, "general", "vhost");
+	item = janus_config_get(config, config_general, janus_config_type_item, "vhost");
 	if(item && item->value)
 		vhost = g_strdup(item->value);
 	else
-	vhost = g_strdup("/");
-	item = janus_config_get_item_drilldown(config, "general", "username");
+		vhost = g_strdup("/");
+	item = janus_config_get(config, config_general, janus_config_type_item, "username");
 	if(item && item->value)
 		username = g_strdup(item->value);
 	else
 		username = g_strdup("guest");
-	item = janus_config_get_item_drilldown(config, "general", "password");
+	item = janus_config_get(config, config_general, janus_config_type_item, "password");
 	if(item && item->value)
 		password = g_strdup(item->value);
 	else
 		password = g_strdup("guest");
 
 	/* SSL config*/
-	item = janus_config_get_item_drilldown(config, "general", "ssl_enable");
+	item = janus_config_get(config, config_general, janus_config_type_item, "ssl_enable");
 	if(!item || !item->value || !janus_is_true(item->value)) {
 		JANUS_LOG(LOG_INFO, "RabbitMQEventHandler: RabbitMQ SSL support disabled\n");
 	} else {
 		ssl_enable = TRUE;
-		item = janus_config_get_item_drilldown(config, "general", "ssl_cacert");
+		item = janus_config_get(config, config_general, janus_config_type_item, "ssl_cacert");
 		if(item && item->value)
 			ssl_cacert_file = g_strdup(item->value);
-		item = janus_config_get_item_drilldown(config, "general", "ssl_cert");
+		item = janus_config_get(config, config_general, janus_config_type_item, "ssl_cert");
 		if(item && item->value)
 			ssl_cert_file = g_strdup(item->value);
-		item = janus_config_get_item_drilldown(config, "general", "ssl_key");
+		item = janus_config_get(config, config_general, janus_config_type_item, "ssl_key");
 		if(item && item->value)
 			ssl_key_file = g_strdup(item->value);
-		item = janus_config_get_item_drilldown(config, "general", "ssl_verify_peer");
+		item = janus_config_get(config, config_general, janus_config_type_item, "ssl_verify_peer");
 		if(item && item->value && janus_is_true(item->value))
 			ssl_verify_peer = TRUE;
-		item = janus_config_get_item_drilldown(config, "general", "ssl_verify_hostname");
+		item = janus_config_get(config, config_general, janus_config_type_item, "ssl_verify_hostname");
 		if(item && item->value && janus_is_true(item->value))
 			ssl_verify_hostname = TRUE;
 	}
 
 	/* Parse configuration */
-	item = janus_config_get_item_drilldown(config, "general", "route_key");
+	item = janus_config_get(config, config_general, janus_config_type_item, "route_key");
 	if(!item || !item->value) {
 		JANUS_LOG(LOG_FATAL, "RabbitMQEventHandler: Missing name of outgoing route_key for RabbitMQ...\n");
 		goto error;
 	}
 	route_key = g_strdup(item->value);
-	item = janus_config_get_item_drilldown(config, "general", "exchange");
+	item = janus_config_get(config, config_general, janus_config_type_item, "exchange");
 	if(!item || !item->value) {
 		JANUS_LOG(LOG_INFO, "RabbitMQEventHandler: Missing name of outgoing exchange for RabbitMQ, using default\n");
 	} else {
@@ -308,7 +260,7 @@ int janus_rabbitmqevh_init(const char *config_path) {
 	/* Connect */
 	rmq_conn = amqp_new_connection();
 	amqp_socket_t *socket = NULL;
-	int status;
+	int status = AMQP_STATUS_OK;
 	JANUS_LOG(LOG_VERB, "RabbitMQEventHandler: Creating RabbitMQ socket...\n");
 	if (ssl_enable) {
 		socket = amqp_ssl_socket_new(rmq_conn);
@@ -402,17 +354,17 @@ int janus_rabbitmqevh_init(const char *config_path) {
 
 	/* Done */
 	JANUS_LOG(LOG_INFO, "Setup of RabbitMQ event handler completed\n");
-
-	if(rmqhost)
-		g_free((char *)rmqhost);
-	if(config)
-		janus_config_destroy(config);
-
-	JANUS_LOG(LOG_INFO, "%s initialized!\n", JANUS_RABBITMQEVH_NAME);
-	return 0;
+	goto done;
 
 error:
 	/* If we got here, something went wrong */
+	success = FALSE;
+	if(route_key)
+		g_free((char *)route_key);
+	if(exchange)
+		g_free((char *)exchange);
+	/* Fall through */
+done:
 	if(rmqhost)
 		g_free((char *)rmqhost);
 	if(vhost)
@@ -421,10 +373,6 @@ error:
 		g_free((char *)username);
 	if(password)
 		g_free((char *)password);
-	if(route_key)
-		g_free((char *)route_key);
-	if(exchange)
-		g_free((char *)exchange);
 	if(ssl_cacert_file)
 		g_free((char *)ssl_cacert_file);
 	if(ssl_cert_file)
@@ -433,7 +381,11 @@ error:
 		g_free((char *)ssl_key_file);
 	if(config)
 		janus_config_destroy(config);
-	return -1;
+	if(!success) {
+		return -1;
+	}
+	JANUS_LOG(LOG_INFO, "%s initialized!\n", JANUS_RABBITMQEVH_NAME);
+	return 0;
 }
 
 void janus_rabbitmqevh_destroy(void) {
@@ -496,8 +448,7 @@ const char *janus_rabbitmqevh_get_package(void) {
 
 void janus_rabbitmqevh_incoming_event(json_t *event) {
 	if(g_atomic_int_get(&stopping) || !g_atomic_int_get(&initialized)) {
-		/* Janus is closing or the plugin is: unref the event as we won't handle it */
-		json_decref(event);
+		/* Janus is closing or the plugin is */
 		return;
 	}
 
@@ -535,7 +486,7 @@ json_t *janus_rabbitmqevh_handle_request(json_t *request) {
 			goto plugin_response;
 		/* Events */
 		if(json_object_get(request, "events"))
-			janus_rabbitmqevh_edit_events_mask(json_string_value(json_object_get(request, "events")));
+			janus_events_edit_events_mask(json_string_value(json_object_get(request, "events")), &janus_rabbitmqevh.events_mask);
 		/* Grouping */
 		if(json_object_get(request, "grouping"))
 			group_events = json_is_true(json_object_get(request, "grouping"));
