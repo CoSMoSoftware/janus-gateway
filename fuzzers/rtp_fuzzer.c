@@ -10,6 +10,8 @@
 int janus_log_level = LOG_NONE;
 gboolean janus_log_timestamps = FALSE;
 gboolean janus_log_colors = FALSE;
+char *janus_log_global_prefix = NULL;
+int lock_debug = 0;
 
 /* This is to avoid linking with openSSL */
 int RAND_bytes(uint8_t *key, int len) {
@@ -65,7 +67,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 	char sdes_item[16];
 	guint16 transport_seq_num;
 	guint8 temporal_layer_id;
-	janus_rtp_header_extension_parse_audio_level((char *)data, size, 1, NULL);
+	janus_rtp_header_extension_parse_audio_level((char *)data, size, 1, NULL, NULL);
 	janus_rtp_header_extension_parse_playout_delay((char *)data, size, 1, NULL, NULL);
 	janus_rtp_header_extension_parse_rid((char *)data, size, 1, sdes_item, sizeof(sdes_item));
 	janus_rtp_header_extension_parse_mid((char *)data, size, 1, sdes_item, sizeof(sdes_item));
@@ -93,10 +95,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 	janus_vp8_simulcast_descriptor_update(copy_payload, plen, &vp8_context, TRUE);
 
 	/* VP9 targets */
-	uint8_t pbit = 0, dbit = 0, ubit = 0, bbit = 0, ebit = 0;
-	int found = 0, spatial_layer = 0, temporal_layer = 0;
+	int found = 0;
+	janus_vp9_svc_info info;
 	janus_vp9_is_keyframe(payload, plen);
-	janus_vp9_parse_svc(payload, plen, &found, &spatial_layer, &temporal_layer, &pbit, &dbit, &ubit, &bbit, &ebit);
+	janus_vp9_parse_svc(payload, plen, &found, &info);
 
 	/* Free resources */
 

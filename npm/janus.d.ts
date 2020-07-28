@@ -23,9 +23,9 @@ declare namespace JanusJS {
 		dependencies?: Dependencies;
 	}
 
-	interface ConstuctorOptions {
+	interface ConstructorOptions {
 		server: string | string[];
-		iceServers?: string[];
+		iceServers?: RTCIceServer[];
 		ipv6?: boolean;
 		withCredentials?: boolean;
 		max_poll_events?: number;
@@ -39,6 +39,8 @@ declare namespace JanusJS {
 
 	enum MessageType {
 		Recording = 'recording',
+		Starting = 'starting',
+		Started = 'started',
 		Stopped = 'stopped',
 		SlowLink = 'slow_link',
 		Preparing = 'preparing',
@@ -51,6 +53,7 @@ declare namespace JanusJS {
 			id?: string;
 			uplink?: number;
 		};
+		error?: Error;
 	}
 
 	interface PluginOptions {
@@ -116,6 +119,9 @@ declare namespace JanusJS {
 		handleRemoteJsep(params: { jsep: JSEP }): void;
 		dtmf(params: any): void;
 		data(params: any): void;
+		isVideoMuted(): boolean;
+		muteVideo(): void;
+		unmuteVideo(): void;
 		getBitrate(): number;
 		hangup(sendRequest?: boolean): void;
 		detach(params: any): void;
@@ -131,8 +137,10 @@ declare namespace JanusJS {
 		static warn(...args: any[]): void;
 		static error(...args: any[]): void;
 		static randomString(length: number): string;
+		static attachMediaStream(element: HTMLMediaElement, stream: MediaStream): void;
+		static reattachMediaStream(to: HTMLMediaElement, from: HTMLMediaElement): void;
 
-		constructor(options: ConstuctorOptions);
+		constructor(options: ConstructorOptions);
 
 		getServer(): string;
 		isConnected(): boolean;

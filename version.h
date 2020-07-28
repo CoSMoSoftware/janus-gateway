@@ -10,8 +10,8 @@
  * \ref core
  */
 
-#ifndef _JANUS_VERSION_H
-#define _JANUS_VERSION_H
+#ifndef JANUS_VERSION_H
+#define JANUS_VERSION_H
 
 extern int janus_version;
 extern const char *janus_version_string;
@@ -19,6 +19,6 @@ extern const char *janus_build_git_time;
 extern const char *janus_build_git_sha;
 
 /* Dependencies (those we can't get programmatically) */
-const char *libnice_version_string;
+extern const char *libnice_version_string;
 
 #endif

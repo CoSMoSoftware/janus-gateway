@@ -18,6 +18,8 @@
 
 #include <netdb.h>
 
+#include <gio/gio.h>
+
 #include "janus.h"
 #include "ice.h"
 #include "sdp.h"
@@ -57,14 +59,29 @@ janus_sdp *janus_sdp_preparse(void *ice_handle, const char *jsep_sdp, char *erro
 			if(a->name) {
 				if(!strcasecmp(a->name, "mid")) {
 					/* Found mid attribute */
+					if(a->value == NULL) {
+						JANUS_LOG(LOG_ERR, "[%"SCNu64"] Invalid mid attribute (no value)\n", handle->handle_id);
+						janus_sdp_destroy(parsed_sdp);
+						return NULL;
+					}
 					if(m->type == JANUS_SDP_AUDIO && m->port > 0) {
 						JANUS_LOG(LOG_VERB, "[%"SCNu64"] Audio mid: %s\n", handle->handle_id, a->value);
+						if(strlen(a->value) > 16) {
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Audio mid too large: (%zu > 16)\n", handle->handle_id, strlen(a->value));
+							janus_sdp_destroy(parsed_sdp);
+							return NULL;
+						}
 						if(handle->audio_mid == NULL)
 							handle->audio_mid = g_strdup(a->value);
 						if(handle->stream_mid == NULL)
 							handle->stream_mid = handle->audio_mid;
 					} else if(m->type == JANUS_SDP_VIDEO && m->port > 0) {
 						JANUS_LOG(LOG_VERB, "[%"SCNu64"] Video mid: %s\n", handle->handle_id, a->value);
+						if(strlen(a->value) > 16) {
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Video mid too large: (%zu > 16)\n", handle->handle_id, strlen(a->value));
+							janus_sdp_destroy(parsed_sdp);
+							return NULL;
+						}
 						if(handle->video_mid == NULL)
 							handle->video_mid = g_strdup(a->value);
 						if(handle->stream_mid == NULL)
@@ -104,7 +121,7 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 	GList *temp = remote_sdp->attributes;
 	while(temp) {
 		janus_sdp_attribute *a = (janus_sdp_attribute *)temp->data;
-		if(a && a->name) {
+		if(a && a->name && a->value) {
 			if(!strcasecmp(a->name, "fingerprint")) {
 				JANUS_LOG(LOG_VERB, "[%"SCNu64"] Fingerprint (global) : %s\n", handle->handle_id, a->value);
 				if(strcasestr(a->value, "sha-256 ") == a->value) {
@@ -278,17 +295,25 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 		GList *tempA = m->attributes;
 		while(tempA) {
 			janus_sdp_attribute *a = (janus_sdp_attribute *)tempA->data;
-			if(a->name) {
+			if(a->name && a->value) {
 				if(!strcasecmp(a->name, "mid")) {
 					/* Found mid attribute */
 					if(m->type == JANUS_SDP_AUDIO && m->port > 0) {
 						JANUS_LOG(LOG_VERB, "[%"SCNu64"] Audio mid: %s\n", handle->handle_id, a->value);
+						if(strlen(a->value) > 16) {
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Audio mid too large: (%zu > 16)\n", handle->handle_id, strlen(a->value));
+							return -2;
+						}
 						if(handle->audio_mid == NULL)
 							handle->audio_mid = g_strdup(a->value);
 						if(handle->stream_mid == NULL)
 							handle->stream_mid = handle->audio_mid;
 					} else if(m->type == JANUS_SDP_VIDEO && m->port > 0) {
 						JANUS_LOG(LOG_VERB, "[%"SCNu64"] Video mid: %s\n", handle->handle_id, a->value);
+						if(strlen(a->value) > 16) {
+							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Video mid too large: (%zu > 16)\n", handle->handle_id, strlen(a->value));
+							return -2;
+						}
 						if(handle->video_mid == NULL)
 							handle->video_mid = g_strdup(a->value);
 						if(handle->stream_mid == NULL)
@@ -374,7 +399,7 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 			/* If this is a renegotiation, check if this is an ICE restart */
 			if((ruser && stream->ruser && strcmp(ruser, stream->ruser)) ||
 					(rpass && stream->rpass && strcmp(rpass, stream->rpass))) {
-				JANUS_LOG(LOG_WARN, "[%"SCNu64"] ICE restart detected\n", handle->handle_id);
+				JANUS_LOG(LOG_INFO, "[%"SCNu64"] ICE restart detected\n", handle->handle_id);
 				janus_flags_clear(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_ALL_TRICKLES);
 				janus_flags_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_ICE_RESTART);
 			}
@@ -505,12 +530,26 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 						if(sscanf(a->value, "%d apt=%d", &rtx_ptype, &ptype) != 2) {
 							JANUS_LOG(LOG_ERR, "[%"SCNu64"] Failed to parse fmtp/apt attribute...\n", handle->handle_id);
 						} else {
-							if(janus_is_rfc4588_enabled()) {
-								rtx = TRUE;
-								janus_flags_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX);
-								if(stream->rtx_payload_types == NULL)
-									stream->rtx_payload_types = g_hash_table_new(NULL, NULL);
-								g_hash_table_insert(stream->rtx_payload_types, GINT_TO_POINTER(ptype), GINT_TO_POINTER(rtx_ptype));
+							rtx = TRUE;
+							janus_flags_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_RFC4588_RTX);
+							if(stream->rtx_payload_types == NULL)
+								stream->rtx_payload_types = g_hash_table_new(NULL, NULL);
+							g_hash_table_insert(stream->rtx_payload_types, GINT_TO_POINTER(ptype), GINT_TO_POINTER(rtx_ptype));
+						}
+					}
+				} else if(!strcasecmp(a->name, "rtpmap")) {
+					if(a->value) {
+						int ptype = atoi(a->value);
+						if(ptype > -1) {
+							char *cr = strchr(a->value, '/');
+							if(cr != NULL) {
+								cr++;
+								uint32_t clock_rate = 0;
+								if(janus_string_to_uint32(cr, &clock_rate) == 0) {
+									if(stream->clock_rates == NULL)
+										stream->clock_rates = g_hash_table_new(NULL, NULL);
+									g_hash_table_insert(stream->clock_rates, GINT_TO_POINTER(ptype), GUINT_TO_POINTER(clock_rate));
+								}
 							}
 						}
 					}
@@ -604,6 +643,51 @@ int janus_sdp_process(void *ice_handle, janus_sdp *remote_sdp, gboolean update) 
 	return 0;	/* FIXME Handle errors better */
 }
 
+typedef struct janus_sdp_mdns_candidate {
+	janus_ice_handle *handle;
+	char *candidate, *local;
+	GCancellable *cancellable;
+} janus_sdp_mdns_candidate;
+static void janus_sdp_mdns_resolved(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+	/* This callback is invoked when the address is resolved */
+	janus_sdp_mdns_candidate *mc = (janus_sdp_mdns_candidate *)user_data;
+	GResolver *resolver = g_resolver_get_default();
+	GError *error = NULL;
+	GList *list = g_resolver_lookup_by_name_finish(resolver, res, &error);
+	if(mc == NULL) {
+		g_resolver_free_addresses(list);
+		g_object_unref(resolver);
+		return;
+	}
+	char *resolved = NULL;
+	if(error != NULL || list == NULL || list->data == NULL) {
+		JANUS_LOG(LOG_WARN, "[%"SCNu64"] Error resolving mDNS address (%s): %s\n",
+			mc->handle->handle_id, mc->local, error ? error->message : "no results");
+	} else {
+		resolved = g_inet_address_to_string((GInetAddress *)list->data);
+		JANUS_LOG(LOG_VERB, "[%"SCNu64"] mDNS address (%s) resolved: %s\n",
+			mc->handle->handle_id, mc->local, resolved);
+	}
+	g_resolver_free_addresses(list);
+	g_object_unref(resolver);
+	if(resolved != NULL && mc->handle->stream && mc->handle->app_handle &&
+			!g_atomic_int_get(&mc->handle->app_handle->stopped) &&
+			!g_atomic_int_get(&mc->handle->destroyed)) {
+		/* Replace the .local address with the resolved one in the candidate string */
+		mc->candidate = janus_string_replace(mc->candidate, mc->local, resolved);
+		/* Parse the candidate again */
+		janus_mutex_lock(&mc->handle->mutex);
+		(void)janus_sdp_parse_candidate(mc->handle->stream, mc->candidate, 1);
+		janus_mutex_unlock(&mc->handle->mutex);
+	}
+	g_free(resolved);
+	/* Get rid of the helper struct */
+	janus_refcount_decrease(&mc->handle->ref);
+	g_free(mc->candidate);
+	g_free(mc->local);
+	g_free(mc);
+}
+
 int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trickle) {
 	if(ice_stream == NULL || candidate == NULL)
 		return -1;
@@ -612,7 +696,7 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 	if(handle == NULL)
 		return -2;
 	janus_ice_component *component = NULL;
-	if(strstr(candidate, "end-of-candidates")) {
+	if(strlen(candidate) == 0 || strstr(candidate, "end-of-candidates")) {
 		/* FIXME Should we do something with this? */
 		JANUS_LOG(LOG_VERB, "[%"SCNu64"] end-of-candidates received\n", handle->handle_id);
 		return 0;
@@ -636,23 +720,25 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 	if(res >= 7) {
 		if(strstr(rip, ".local")) {
 			/* The IP is actually an mDNS address, try to resolve it
-			 * https://tools.ietf.org/html/draft-ietf-rtcweb-mdns-ice-candidates-00 */
-			struct addrinfo *info = NULL;
-			janus_network_address addr;
-			janus_network_address_string_buffer addr_buf;
-			if(getaddrinfo(rip, NULL, NULL, &info) != 0 ||
-					janus_network_address_from_sockaddr(info->ai_addr, &addr) != 0 ||
-					janus_network_address_to_string_buffer(&addr, &addr_buf) != 0) {
-				JANUS_LOG(LOG_WARN, "[%"SCNu64"] Couldn't resolve mDNS address (%s), dropping candidate\n",
-					handle->handle_id, rip);
-				if(info)
-					freeaddrinfo(info);
-				return res;
+			 * https://tools.ietf.org/html/draft-ietf-rtcweb-mdns-ice-candidates-04 */
+			if(!janus_ice_is_mdns_enabled()) {
+				/* ...unless mDNS resolution is disabled, in which case ignore this candidate */
+				JANUS_LOG(LOG_VERB, "[%"SCNu64"] mDNS candidate ignored\n", handle->handle_id);
+				return 0;
 			}
-			freeaddrinfo(info);
-			JANUS_LOG(LOG_WARN, "[%"SCNu64"] mDNS address (%s) resolved: %s\n",
-				handle->handle_id, rip, janus_network_address_string_from_buffer(&addr_buf));
-			g_strlcpy(rip, janus_network_address_string_from_buffer(&addr_buf), sizeof(rip));
+			/* We'll resolve this address asynchronously, in order not to keep this thread busy */
+			JANUS_LOG(LOG_VERB, "[%"SCNu64"] Resolving mDNS address (%s) asynchronously\n",
+				handle->handle_id, rip);
+			janus_sdp_mdns_candidate *mc = g_malloc(sizeof(janus_sdp_mdns_candidate));
+			janus_refcount_increase(&handle->ref);
+			mc->handle = handle;
+			mc->candidate = g_strdup(candidate);
+			mc->local = g_strdup(rip);
+			mc->cancellable = NULL;
+			GResolver *resolver = g_resolver_get_default();
+			g_resolver_lookup_by_name_async(resolver, rip, NULL,
+				(GAsyncReadyCallback)janus_sdp_mdns_resolved, mc);
+			return 0;
 		}
 		/* Add remote candidate */
 		component = stream->component;
@@ -754,17 +840,29 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 #endif
 				g_strlcpy(c->foundation, rfoundation, NICE_CANDIDATE_MAX_FOUNDATION);
 				c->priority = rpriority;
-				nice_address_set_from_string(&c->addr, rip);
+				gboolean added = nice_address_set_from_string(&c->addr, rip);
+				if(!added) {
+					JANUS_LOG(LOG_WARN, "[%"SCNu64"]    Invalid address '%s', skipping %s candidate (%s)\n",
+						handle->handle_id, rip, rtype, candidate);
+					nice_candidate_free(c);
+					return 0;
+				}
 				nice_address_set_port(&c->addr, rport);
-				c->username = g_strdup(stream->ruser);
-				c->password = g_strdup(stream->rpass);
 				if(c->type == NICE_CANDIDATE_TYPE_SERVER_REFLEXIVE || c->type == NICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
-					nice_address_set_from_string(&c->base_addr, rrelip);
-					nice_address_set_port(&c->base_addr, rrelport);
+					added = nice_address_set_from_string(&c->base_addr, rrelip);
+					if(added)
+						nice_address_set_port(&c->base_addr, rrelport);
 				} else if(c->type == NICE_CANDIDATE_TYPE_RELAYED) {
 					/* FIXME Do we really need the base address for TURN? */
-					nice_address_set_from_string(&c->base_addr, rrelip);
-					nice_address_set_port(&c->base_addr, rrelport);
+					added = nice_address_set_from_string(&c->base_addr, rrelip);
+					if(added)
+						nice_address_set_port(&c->base_addr, rrelport);
+				}
+				if(!added) {
+					JANUS_LOG(LOG_WARN, "[%"SCNu64"]    Invalid base address '%s', skipping %s candidate (%s)\n",
+						handle->handle_id, rrelip, rtype, candidate);
+					nice_candidate_free(c);
+					return 0;
 				}
 				component->candidates = g_slist_append(component->candidates, c);
 				JANUS_LOG(LOG_HUGE, "[%"SCNu64"]    Candidate added to the list! (%u elements for %d/%d)\n", handle->handle_id,
@@ -778,7 +876,8 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 					json_object_set_new(info, "remote-candidate", json_string(candidate));
 					json_object_set_new(info, "stream_id", json_integer(stream->stream_id));
 					json_object_set_new(info, "component_id", json_integer(component->component_id));
-					janus_events_notify_handlers(JANUS_EVENT_TYPE_WEBRTC, session->session_id, handle->handle_id, handle->opaque_id, info);
+					janus_events_notify_handlers(JANUS_EVENT_TYPE_WEBRTC, JANUS_EVENT_SUBTYPE_WEBRTC_RCAND,
+						session->session_id, handle->handle_id, handle->opaque_id, info);
 				}
 				/* See if we need to process this */
 				if(trickle) {
@@ -789,14 +888,8 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 							JANUS_LOG(LOG_VERB, "[%"SCNu64"] ICE already started for this component, setting candidates we have up to now\n", handle->handle_id);
 							janus_ice_setup_remote_candidates(handle, component->stream_id, component->component_id);
 						} else {
-							GSList *candidates = NULL;
-							candidates = g_slist_append(candidates, c);
-							if(nice_agent_set_remote_candidates(handle->agent, stream->stream_id, component->component_id, candidates) < 1) {
-								JANUS_LOG(LOG_ERR, "[%"SCNu64"] Failed to add trickle candidate :-(\n", handle->handle_id);
-							} else {
-								JANUS_LOG(LOG_HUGE, "[%"SCNu64"] Trickle candidate added!\n", handle->handle_id);
-							}
-							g_slist_free(candidates);
+							/* Queue the candidate, we'll process it in the loop */
+							janus_ice_add_remote_candidate(handle, c);
 						}
 					} else {
 						/* ICE hasn't started yet: to make sure we're not stuck, also check if we stopped processing the SDP */
@@ -808,14 +901,8 @@ int janus_sdp_parse_candidate(void *ice_stream, const char *candidate, int trick
 								JANUS_LOG(LOG_VERB, "[%"SCNu64"] SDP processed but ICE not started yet for this component, setting candidates we have up to now\n", handle->handle_id);
 								janus_ice_setup_remote_candidates(handle, component->stream_id, component->component_id);
 							} else {
-								GSList *candidates = NULL;
-								candidates = g_slist_append(candidates, c);
-								if(nice_agent_set_remote_candidates(handle->agent, stream->stream_id, component->component_id, candidates) < 1) {
-									JANUS_LOG(LOG_ERR, "[%"SCNu64"] Failed to add trickle candidate :-(\n", handle->handle_id);
-								} else {
-									JANUS_LOG(LOG_HUGE, "[%"SCNu64"] Trickle candidate added!\n", handle->handle_id);
-								}
-								g_slist_free(candidates);
+								/* Queue the candidate, we'll process it in the loop */
+								janus_ice_add_remote_candidate(handle, c);
 							}
 						} else {
 							/* Still processing the offer/answer: queue the trickle candidate for now, we'll process it later */
@@ -1073,8 +1160,12 @@ int janus_sdp_anonymize(janus_sdp *anon) {
 			janus_sdp_attribute *a = (janus_sdp_attribute *)tempA->data;
 			if(a->value && (strstr(a->value, "red/90000") || strstr(a->value, "ulpfec/90000") || strstr(a->value, "rtx/90000"))) {
 				int ptype = atoi(a->value);
-				JANUS_LOG(LOG_VERB, "Will remove payload type %d (%s)\n", ptype, a->value);
-				purged_ptypes = g_list_append(purged_ptypes, GINT_TO_POINTER(ptype));
+				if(ptype < 0) {
+					JANUS_LOG(LOG_ERR, "Invalid payload type (%d)\n", ptype);
+				} else {
+					JANUS_LOG(LOG_VERB, "Will remove payload type %d (%s)\n", ptype, a->value);
+					purged_ptypes = g_list_append(purged_ptypes, GINT_TO_POINTER(ptype));
+				}
 			}
 			tempA = tempA->next;
 		}
@@ -1108,7 +1199,7 @@ char *janus_sdp_merge(void *ice_handle, janus_sdp *anon, gboolean offer) {
 	char *rtp_profile = handle->rtp_profile ? handle->rtp_profile : (char *)"UDP/TLS/RTP/SAVPF";
 	if(!janus_is_webrtc_encryption_enabled())
 		rtp_profile = (char *)"RTP/AVPF";
-	gboolean ipv4 = !strstr(janus_get_public_ip(), ":");
+	gboolean ipv4 = !strstr(janus_get_public_ip(0), ":");
 	/* Origin o= */
 	gint64 sessid = janus_get_real_time();
 	if(anon->o_name == NULL)
@@ -1119,7 +1210,7 @@ char *janus_sdp_merge(void *ice_handle, janus_sdp *anon, gboolean offer) {
 	}
 	anon->o_ipv4 = ipv4;
 	g_free(anon->o_addr);
-	anon->o_addr = g_strdup(janus_get_public_ip());
+	anon->o_addr = g_strdup(janus_get_public_ip(0));
 	/* Session name s= */
 	if(anon->s_name == NULL)
 		anon->s_name = g_strdup("Meetecho Janus");
@@ -1145,14 +1236,14 @@ char *janus_sdp_merge(void *ice_handle, janus_sdp *anon, gboolean offer) {
 			if(audio == 1) {
 				g_snprintf(buffer_part, sizeof(buffer_part),
 					" %s", handle->audio_mid ? handle->audio_mid : "audio");
-				g_strlcat(buffer, buffer_part, JANUS_BUFSIZE);
+				g_strlcat(buffer, buffer_part, sizeof(buffer));
 			}
 		} else if(m->type == JANUS_SDP_VIDEO) {
 			video++;
 			if(video == 1) {
 				g_snprintf(buffer_part, sizeof(buffer_part),
 					" %s", handle->video_mid ? handle->video_mid : "video");
-				g_strlcat(buffer, buffer_part, JANUS_BUFSIZE);
+				g_strlcat(buffer, buffer_part, sizeof(buffer));
 			}
 #ifdef HAVE_SCTP
 		} else if(m->type == JANUS_SDP_APPLICATION) {
@@ -1161,7 +1252,7 @@ char *janus_sdp_merge(void *ice_handle, janus_sdp *anon, gboolean offer) {
 			if(data == 1) {
 				g_snprintf(buffer_part, sizeof(buffer_part),
 					" %s", handle->data_mid ? handle->data_mid : "data");
-				g_strlcat(buffer, buffer_part, JANUS_BUFSIZE);
+				g_strlcat(buffer, buffer_part, sizeof(buffer));
 			}
 #endif
 		}
@@ -1198,7 +1289,7 @@ char *janus_sdp_merge(void *ice_handle, janus_sdp *anon, gboolean offer) {
 		/* Media connection c= */
 		g_free(m->c_addr);
 		m->c_ipv4 = ipv4;
-		m->c_addr = g_strdup(janus_get_public_ip());
+		m->c_addr = g_strdup(janus_get_public_ip(0));
 		/* Check if we need to refuse the media or not */
 		if(m->type == JANUS_SDP_AUDIO) {
 			audio++;

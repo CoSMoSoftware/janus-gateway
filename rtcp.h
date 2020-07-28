@@ -13,8 +13,8 @@
  * \ref protocols
  */
 
-#ifndef _JANUS_RTCP_H
-#define _JANUS_RTCP_H
+#ifndef JANUS_RTCP_H
+#define JANUS_RTCP_H
 
 #include <arpa/inet.h>
 #ifdef __MACH__
@@ -276,6 +276,9 @@ typedef struct rtcp_context
 	double in_media_link_quality;
 	double out_link_quality;
 	double out_media_link_quality;
+
+	/* TODO Incoming transport-wide CC feedback*/
+
 } rtcp_context;
 typedef rtcp_context janus_rtcp_context;
 
@@ -319,6 +322,12 @@ uint32_t janus_rtcp_context_get_out_link_quality(janus_rtcp_context *ctx);
  * @param[in] ctx The RTCP context to query
  * @returns Outbound media link quality estimation */
 uint32_t janus_rtcp_context_get_out_media_link_quality(janus_rtcp_context *ctx);
+/*! \brief Method to swap Report Blocks and move media RB in first position in case rtx SSRC comes first
+ * @param[in] packet The message data
+ * @param[in] len The message data length in bytes
+ * @param[in] rtx_ssrc The rtx SSRC
+ * @returns The receiver SSRC, or 0 in case of error */
+void janus_rtcp_swap_report_blocks(char *packet, int len, uint32_t rtx_ssrc);
 /*! \brief Method to quickly retrieve the sender SSRC (needed for demuxing RTCP in BUNDLE)
  * @param[in] packet The message data
  * @param[in] len The message data length in bytes
@@ -332,29 +341,29 @@ guint32 janus_rtcp_get_receiver_ssrc(char *packet, int len);
 
 /*! \brief Method to check that a RTCP packet size is at least the minimum necessary (8 bytes)
  *  and to validate the length field against the actual size
- * @param[in] packet The message data
+ * @param[in] rtcp The RTCP message
  * @param[in] len The message data length in bytes
  * @returns TRUE if packet is OK, or FALSE in case of error */
 gboolean janus_rtcp_check_len(janus_rtcp_header *rtcp, int len);
 /*! \brief Method to check if a RTCP packet could contain a Receiver Report
- * @param[in] packet The message data
+ * @param[in] rtcp The RTCP message
  * @param[in] len The message data length in bytes
  * @returns TRUE if packet is OK, or FALSE in case of error */
 gboolean janus_rtcp_check_rr(janus_rtcp_header *rtcp, int len);
 /*! \brief Method to check if a RTCP packet could contain a Sender Report
- * @param[in] packet The message data
+ * @param[in] rtcp The RTCP message
  * @param[in] len The message data length in bytes
  * @returns TRUE if packet is OK, or FALSE in case of error */
 gboolean janus_rtcp_check_sr(janus_rtcp_header *rtcp, int len);
 /*! \brief Method to check if a RTCP packet could contain a Feedback Message
  * with a defined FCI size.
- * @param[in] packet The message data
+ * @param[in] rtcp The RTCP message
  * @param[in] len The message data length in bytes
  * @param[in] sizeof_fci The size of a FCI entry
  * @returns TRUE if packet is OK, or FALSE in case of error */
 gboolean janus_rtcp_check_fci(janus_rtcp_header *rtcp, int len, int sizeof_fci);
 /*! \brief Method to check if a RTCP packet could contain an AFB REMB Message
- * @param[in] packet The message data
+ * @param[in] rtcp The RTCP message
  * @param[in] len The message data length in bytes
  * @returns TRUE if packet is OK, or FALSE in case of error */
 gboolean janus_rtcp_check_remb(janus_rtcp_header *rtcp, int len);
@@ -388,7 +397,6 @@ int janus_rtcp_fix_report_data(char *packet, int len, uint32_t base_ts, uint32_t
  * @param[in] packet The message data
  * @param[in] len The message data length in bytes
  * @param[in] fixssrc Whether the method needs to fix the message or just parse it
- * @param[in] fixssrc Whether the method needs to fix the message or just parse it
  * @param[in] newssrcl The SSRC of the sender to put in the message
  * @param[in] newssrcr The SSRC of the receiver to put in the message
  * @returns 0 in case of success, -1 on errors */
@@ -408,8 +416,11 @@ char *janus_rtcp_filter(char *packet, int len, int *newlen);
  * @param[in] rfc4588_pkt True if this is a RTX packet
  * @param[in] rfc4588_enabled True if this packet comes from a RTX enabled stream
  * @param[in] retransmissions_disabled True if retransmissions are not supported at all for this stream
+ * @param[in] clock_rates Mapping between payload types and clock rates, if available
  * @returns 0 in case of success, -1 on errors */
-int janus_rtcp_process_incoming_rtp(janus_rtcp_context *ctx, char *packet, int len, gboolean rfc4588_pkt, gboolean rfc4588_enabled, gboolean retransmissions_disabled);
+int janus_rtcp_process_incoming_rtp(janus_rtcp_context *ctx, char *packet, int len,
+	gboolean rfc4588_pkt, gboolean rfc4588_enabled, gboolean retransmissions_disabled,
+	GHashTable *clock_rates);
 
 /*! \brief Method to fill in a Report Block in a Receiver Report
  * @param[in] ctx The RTCP context to use for the report

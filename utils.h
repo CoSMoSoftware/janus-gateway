@@ -9,8 +9,8 @@
  * \ref core
  */
 
-#ifndef _JANUS_UTILS_H
-#define _JANUS_UTILS_H
+#ifndef JANUS_UTILS_H
+#define JANUS_UTILS_H
 
 #include <stdint.h>
 #include <glib.h>
@@ -69,6 +69,10 @@ guint32 janus_random_uint32(void);
  * @returns A random 64-bit unsigned integer */
 guint64 janus_random_uint64(void);
 
+/*! \brief Helper to generate random UUIDs (needed by some plugins)
+ * @returns A random UUID string, which must be deallocated with \c g_free */
+char *janus_random_uuid(void);
+
 /*! \brief Helper to generate an allocated copy of a guint64 number
  * @note While apparently silly, this is needed in order to make sure guint64 values
  * used as keys in GHashTable operations are not lost: using temporary guint64 numbers
@@ -77,6 +81,27 @@ guint64 janus_random_uint64(void);
  * @param num The guint64 number to duplicate
  * @returns A pointer to a guint64 number, if successful, NULL otherwise */
 guint64 *janus_uint64_dup(guint64 num);
+
+/*! \brief Helper method to convert a string to a uint8_t
+ * @note The value of \c num should be ignored, if the method returned an error
+ * @param[in] str The string to convert
+ * @param[out] num Pointer to the converted number
+ * @returns 0 if successful, or a negative integer otherwise (e.g., \c -ERANGE if the value is out of range) */
+int janus_string_to_uint8(const char *str, uint8_t *num);
+
+/*! \brief Helper method to convert a string to a uint16_t
+ * @note The value of \c num should be ignored, if the method returned an error
+ * @param[in] str The string to convert
+ * @param[out] num Pointer to the converted number
+ * @returns 0 if successful, or a negative integer otherwise (e.g., \c -ERANGE if the value is out of range) */
+int janus_string_to_uint16(const char *str, uint16_t *num);
+
+/*! \brief Helper method to convert a string to a uint32_t
+ * @note The value of \c num should be ignored, if the method returned an error
+ * @param[in] str The string to convert
+ * @param[out] num Pointer to the converted number
+ * @returns 0 if successful, or a negative integer otherwise (e.g., \c -ERANGE if the value is out of range) */
+int janus_string_to_uint32(const char *str, uint32_t *num);
 
 /** @name Flags helper methods
  */
@@ -132,6 +157,19 @@ int janus_pidfile_create(const char *file);
 /*! \brief Unlock and remove a previously created PID file
  * @returns 0 if successful, a negative integer otherwise */
 int janus_pidfile_remove(void);
+
+/*! \brief Add a folder to the protected list (meaning we won't create
+ * files there, like recordings or pcap dumps)
+ * @param folder Folder to protect */
+void janus_protected_folder_add(const char *folder);
+
+/*! \brief Check if the path points to a protected folder
+ * @param path Path we need to check
+ * @returns TRUE if the folder is protected, and FALSE otherwise */
+gboolean janus_is_folder_protected(const char *path);
+
+/*! \brief Cleanup the list of protected folder */
+void janus_protected_folders_clear(void);
 
 /*! \brief Creates a string describing the JSON type and constraint
  * @param jtype The JSON type, e.g., JSON_STRING
@@ -241,6 +279,20 @@ gboolean janus_vp9_is_keyframe(const char *buffer, int len);
  * @returns TRUE if it's a keyframe, FALSE otherwise */
 gboolean janus_h264_is_keyframe(const char *buffer, int len);
 
+/*! \brief Helper method to check if an AV1 frame is a keyframe or not
+ * @note Currently only a placeholder, always returns FALSE
+ * @param[in] buffer The RTP payload to process
+ * @param[in] len The length of the RTP payload
+ * @returns TRUE if it's a keyframe, FALSE otherwise */
+gboolean janus_av1_is_keyframe(const char *buffer, int len);
+
+/*! \brief Helper method to check if an H.265 frame is a keyframe or not
+ * @note Currently only a placeholder, always returns FALSE
+ * @param[in] buffer The RTP payload to process
+ * @param[in] len The length of the RTP payload
+ * @returns TRUE if it's a keyframe, FALSE otherwise */
+gboolean janus_h265_is_keyframe(const char *buffer, int len);
+
 /*! \brief VP8 simulcasting context, in order to make sure SSRC changes result in coherent picid/temporal level increases */
 typedef struct janus_vp8_simulcast_context {
 	uint16_t last_picid, base_picid, base_picid_prev;
@@ -270,21 +322,19 @@ int janus_vp8_parse_descriptor(char *buffer, int len,
  * @param[in] switched Whether there has been a source switch or not (important to compute offsets) */
 void janus_vp8_simulcast_descriptor_update(char *buffer, int len, janus_vp8_simulcast_context *context, gboolean switched);
 
+/*! \brief VP9 SVC info, as parsed from a payload descriptor */
+typedef struct janus_vp9_svc_info {
+	int spatial_layer, temporal_layer;
+	uint8_t fbit, pbit, dbit, ubit, bbit, ebit;
+} janus_vp9_svc_info;
+
 /*! \brief Helper method to parse a VP9 payload descriptor for SVC-related info (e.g., when SVC is enabled)
  * @param[in] buffer The RTP payload to process
  * @param[in] len The length of the RTP payload
  * @param[out] found Whether any SVC related info has been found or not
- * @param[out] spatial_layer Spatial layer of the packet
- * @param[out] temporal_layer Temporal layer of the packet
- * @param[out] p Inter-picture predicted picture bit
- * @param[out] d Inter-layer dependency used bit
- * @param[out] u Switching up point bit
- * @param[out] b Start of a frame bit
- * @param[out] e End of a frame bit
+ * @param[out] info Pointer to a janus_vp9_svc_info structure for passing the parsed info back
  * @returns 0 in case of success, a negative integer otherwise */
-int janus_vp9_parse_svc(char *buffer, int len, int *found,
-		int *spatial_layer, int *temporal_layer,
-		uint8_t *p, uint8_t *d, uint8_t *u, uint8_t *b, uint8_t *e);
+int janus_vp9_parse_svc(char *buffer, int len, gboolean *found, janus_vp9_svc_info *info);
 
 /*! \brief Helper method to push individual bits at the end of a word
  * @param[in] word Initial value of word
@@ -320,5 +370,17 @@ void janus_set3(guint8 *data, size_t i, guint32 val);
  * @param[in] val value to write
  */
 void janus_set4(guint8 *data, size_t i, guint32 val);
+
+/*! \brief Helper method to compress a string to gzip (using zlib)
+ * \note It's up to you to provide a buffer large enough for the compressed
+ * data: in case the buffer isn't large enough, the request will fail
+ * @param[in] compression Compression factor (1=fastest, 9=best compression)
+ * @param[in] text Pointer to the string to compress
+ * @param[in] tlen Length of the string to compress
+ * @param[in] compressed Pointer to the buffer where to compress the string to
+ * @param[in] zlen Size of the output buffer
+ * @returns The size of the compressed data, if successful, or 0 otherwise
+ */
+size_t janus_gzip_compress(int compression, char *text, size_t tlen, char *compressed, size_t zlen);
 
 #endif

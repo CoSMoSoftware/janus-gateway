@@ -26,6 +26,7 @@
 #include "debug.h"
 #include "mutex.h"
 #include "ip-utils.h"
+#include "utils.h"
 
 static const char *api_server = NULL;
 static const char *api_key = NULL;
@@ -116,7 +117,7 @@ void janus_turnrest_response_destroy(janus_turnrest_response *response) {
 	g_list_free_full(response->servers, janus_turnrest_instance_destroy);
 }
 
-janus_turnrest_response *janus_turnrest_request(void) {
+janus_turnrest_response *janus_turnrest_request(const char *user) {
 	janus_mutex_lock(&api_mutex);
 	if(api_server == NULL) {
 		janus_mutex_unlock(&api_mutex);
@@ -129,11 +130,20 @@ janus_turnrest_response *janus_turnrest_request(void) {
 		/* Note: we've been using 'api' as a query string parameter for
 		 * a while, but the expired draft this implementation follows
 		 * suggested 'key' instead: as such, we send them both
-		 * See https://github.com/meetecho/janus-gateway/issues/1416*/
+		 * See https://github.com/meetecho/janus-gateway/issues/1416 */
 		char buffer[256];
 		g_snprintf(buffer, 256, "&api=%s", api_key);
 		g_strlcat(query_string, buffer, 512);
 		g_snprintf(buffer, 256, "&key=%s", api_key);
+		g_strlcat(query_string, buffer, 512);
+	}
+	if(user != NULL) {
+		/* Note: 'username' is supposedly optional, but a commonly used
+		 * TURN REST API server implementation requires it. As such, we
+		 * now send that too, letting the Janus core tell us what to use
+		 * See https://github.com/meetecho/janus-gateway/issues/2199 */
+		char buffer[256];
+		g_snprintf(buffer, 256, "&username=%s", user);
 		g_strlcat(query_string, buffer, 512);
 	}
 	char request_uri[1024];
@@ -262,8 +272,9 @@ janus_turnrest_response *janus_turnrest_request(void) {
 		if(uri_parts[2] == NULL) {
 			/* No port? Use 3478 by default */
 			instance->port = 3478;
-		} else {
-			instance->port = atoi(uri_parts[2]);
+		} else if(janus_string_to_uint16(uri_parts[2], &instance->port) < 0) {
+			JANUS_LOG(LOG_ERR, "Invalid TURN instance port: %s (falling back to 3478)\n", uri_parts[2]);
+			instance->port = 3478;
 		}
 		g_strfreev(uri_parts);
 		g_strfreev(parts);

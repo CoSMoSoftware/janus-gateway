@@ -57,28 +57,12 @@ int janus_events_init(gboolean enabled, char *server_name, GHashTable *handlers)
 			eventsenabled = FALSE;
 			g_free(server);
 			g_async_queue_unref(events);
-			JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the Events handler thread...\n", error->code, error->message ? error->message : "??");
+			JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the Events handler thread...\n",
+				error->code, error->message ? error->message : "??");
+			g_error_free(error);
 			return -1;
 		}
 	}
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_SESSION),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_SESSION));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_HANDLE),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_HANDLE));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_EXTERNAL),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_EXTERNAL));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_JSEP),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_JSEP));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_WEBRTC),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_WEBRTC));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_MEDIA),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_MEDIA));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_PLUGIN),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_PLUGIN));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_TRANSPORT),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_TRANSPORT));
-	JANUS_LOG(LOG_INFO, "%s, %s\n", janus_events_type_to_label(JANUS_EVENT_TYPE_CORE),
-		janus_events_type_to_label(JANUS_EVENT_TYPE_CORE));
 	return 0;
 }
 
@@ -100,7 +84,7 @@ gboolean janus_events_is_enabled(void) {
 	return eventsenabled;
 }
 
-void janus_events_notify_handlers(int type, guint64 session_id, ...) {
+void janus_events_notify_handlers(int type, int subtype, guint64 session_id, ...) {
 	/* This method has a variable list of arguments, depending on the event type */
 	va_list args;
 	va_start(args, session_id);
@@ -151,6 +135,8 @@ void janus_events_notify_handlers(int type, guint64 session_id, ...) {
 	if(server != NULL)
 		json_object_set_new(event, "emitter", json_string(server));
 	json_object_set_new(event, "type", json_integer(type));
+	if(subtype > 0)
+		json_object_set_new(event, "subtype", json_integer(subtype));
 	json_object_set_new(event, "timestamp", json_integer(janus_get_real_time()));
 	if(type != JANUS_EVENT_TYPE_CORE && type != JANUS_EVENT_TYPE_EXTERNAL) {
 		/* Core and Admin API originated events don't have a session ID */
@@ -193,6 +179,11 @@ void janus_events_notify_handlers(int type, guint64 session_id, ...) {
 				 * that's the only place we had the opaque_id present before */
 				json_object_set_new(body, "opaque_id", json_string(opaque_id));
 			}
+			/* The token used to attach may be provided as well: just as with the opaque_id,
+			 * in event handlers, it may be useful for inter-handle mappings or other things */
+			char *token = va_arg(args, char *);
+			if(token != NULL)
+				json_object_set_new(body, "token", json_string(token));
 			break;
 		}
 		case JANUS_EVENT_TYPE_JSEP: {
@@ -287,13 +278,12 @@ void *janus_events_thread(void *data) {
 	while(eventsenabled) {
 		/* Any event in queue? */
 		event = g_async_queue_pop(events);
-		if(event == NULL)
-			continue;
 		if(event == &exit_event)
 			break;
 
 		/* Notify all interested handlers, increasing the event reference to make sure it's not lost because of errors */
 		int type = json_integer_value(json_object_get(event, "type"));
+		guint count = g_hash_table_size(eventhandlers);
 		GHashTableIter iter;
 		gpointer value;
 		g_hash_table_iter_init(&iter, eventhandlers);
@@ -304,7 +294,15 @@ void *janus_events_thread(void *data) {
 				continue;
 			if(!janus_flags_is_set(&e->events_mask, type))
 				continue;
-			e->incoming_event(event);
+			if(count == 1) {
+				/* Single event handler: pass this instance directly */
+				e->incoming_event(event);
+			} else {
+				/* Multiple event handlers, that may modify the event: pass a copy */
+				json_t *copy = json_deep_copy(event);
+				e->incoming_event(copy);
+				json_decref(copy);
+			}
 		}
 		json_decref(event);
 

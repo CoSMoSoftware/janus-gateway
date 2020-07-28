@@ -3,25 +3,23 @@
  * \copyright GNU General Public License v3
  * \brief    OpenSSL BIO agent writer
  * \details  OpenSSL BIO that writes packets to a libnice agent.
- * 
+ *
  * \ingroup protocols
  * \ref protocols
  */
- 
-#ifndef _JANUS_DTLS_BIO_H
-#define _JANUS_DTLS_BIO_H
+
+#ifndef JANUS_DTLS_BIO_H
+#define JANUS_DTLS_BIO_H
 
 #include <openssl/opensslv.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include "dtls.h"
-
 /*! \brief OpenSSL BIO agent writer initialization */
 int janus_dtls_bio_agent_init(void);
 
 /*! \brief OpenSSL BIO agent writer constructor */
-BIO *BIO_janus_dtls_agent_new(struct janus_dtls_srtp *dtls);
+BIO *BIO_janus_dtls_agent_new(void *dtls);
 
 /*! \brief Set the MTU for the BIO agent writer
  * \note The default starting MTU is 1472, in case fragmentation is needed

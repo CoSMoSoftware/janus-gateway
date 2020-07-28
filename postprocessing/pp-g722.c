@@ -64,7 +64,9 @@ int janus_pp_g722_create(char *destination, char *metadata) {
 	if(destination == NULL)
 		return -1;
 	/* Setup FFmpeg */
+#if ( LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58,9,100) )
 	av_register_all();
+#endif
 	/* Adjust logging to match the postprocessor's */
 	av_log_set_level(janus_log_level <= LOG_NONE ? AV_LOG_QUIET :
 		(janus_log_level == LOG_FATAL ? AV_LOG_FATAL :
@@ -244,6 +246,14 @@ void janus_pp_g722_close(void) {
 	dec_ctx = NULL;
 	/* Flush and close file */
 	if(wav_file != NULL) {
+		/* Update the header */
+		fseek(wav_file, 0, SEEK_END);
+		uint32_t size = ftell(wav_file) - 8;
+		fseek(wav_file, 4, SEEK_SET);
+		fwrite(&size, sizeof(uint32_t), 1, wav_file);
+		size += 8;
+		fseek(wav_file, 40, SEEK_SET);
+		fwrite(&size, sizeof(uint32_t), 1, wav_file);
 		fflush(wav_file);
 		fclose(wav_file);
 	}
